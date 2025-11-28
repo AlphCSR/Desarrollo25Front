@@ -1,7 +1,8 @@
+
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "react-oidc-context";
-import { getEventById, getEventSeats, lockSeat, getEventSections } from "../services/api";
+import { getEventById, getEventSeats, lockSeat, unlockSeat, getEventSections, getUserByEmail, deleteEvent } from "../services/api";
 import { SeatGrid } from "../components/SeatGrid";
 
 export const EventDetailPage = () => {
@@ -14,15 +15,29 @@ export const EventDetailPage = () => {
     const [sections, setSections] = useState<any[]>([]);
     const [selectedSeats, setSelectedSeats] = useState<any[]>([]); // Array de asientos seleccionados
     const [loading, setLoading] = useState(true);
+    const [currentUser, setCurrentUser] = useState<any>(null);
 
     const token = auth.user?.access_token || "";
     const userId = auth.user?.profile.sub || "";
+    const userEmail = auth.user?.profile.email || "";
 
     useEffect(() => {
         if (id && token) {
             loadData();
         }
-    }, [id, token]);
+        if (userEmail && token) {
+            loadUser();
+        }
+    }, [id, token, userEmail]);
+
+    const loadUser = async () => {
+        try {
+            const user = await getUserByEmail(userEmail, token);
+            setCurrentUser(user);
+        } catch (error) {
+            console.error("Error loading user", error);
+        }
+    };
 
     const loadData = async () => {
         try {
@@ -41,18 +56,50 @@ export const EventDetailPage = () => {
         }
     };
 
+    const handleDeleteEvent = async () => {
+        if (!window.confirm("¿Estás seguro de que quieres cancelar este evento?")) return;
+        try {
+            await deleteEvent(id!, token);
+            navigate("/");
+        } catch (error) {
+            console.error("Error deleting event", error);
+            alert("Error al cancelar el evento.");
+        }
+    };
+
     const handleSeatClick = async (seat: any) => {
         if (!userId) return;
 
-        // Verificar si ya está seleccionado
+        // Verificar si ya está seleccionado en mi carrito local
         const isSelected = selectedSeats.some(s => s.id === seat.id);
 
+        // Verificar si está bloqueado por mí en el backend (estado 'Locked' y userId coincide)
+        const isLockedByMe = seat.status === 'Locked' && seat.userId === userId;
+
         if (isSelected) {
-            // Deseleccionar (remover del array)
+            // Caso 1: Deseleccionar del carrito local
+            if (isLockedByMe) {
+                try {
+                    await unlockSeat(seat.id, userId, token);
+                    const updatedSeats = await getEventSeats(id!, token);
+                    setSeats(updatedSeats);
+                } catch (error) {
+                    console.error("Error unlocking seat", error);
+                }
+            }
             setSelectedSeats(prev => prev.filter(s => s.id !== seat.id));
+        } else if (isLockedByMe) {
+            // Caso 2: Está bloqueado por mí pero no estaba en mi selección local
+            try {
+                await unlockSeat(seat.id, userId, token);
+                const updatedSeats = await getEventSeats(id!, token);
+                setSeats(updatedSeats);
+            } catch (error) {
+                console.error("Error unlocking seat", error);
+                alert("Error al desbloquear el asiento.");
+            }
         } else {
-            // Seleccionar
-            // Calcular precio: Usar precio del asiento si existe, sino buscar en sección
+            // Caso 3: Seleccionar (Bloquear)
             let price = seat.price;
             if (price === undefined || price === null) {
                 const section = sections.find(s => s.id === seat.sectionId);
@@ -64,14 +111,11 @@ export const EventDetailPage = () => {
             setSelectedSeats(prev => [...prev, seatWithPrice]);
 
             try {
-                // Llamar a SeatingMS para bloquear
                 await lockSeat(seat.id, userId, token);
-                // Recargar asientos para ver el estado real 'Locked'
                 const updatedSeats = await getEventSeats(id!, token);
                 setSeats(updatedSeats);
             } catch (error) {
                 alert("Error: El asiento ya fue tomado por otro usuario.");
-                // Revertir selección si falla
                 setSelectedSeats(prev => prev.filter(s => s.id !== seat.id));
                 loadData();
             }
@@ -83,12 +127,13 @@ export const EventDetailPage = () => {
 
     const handleProceedToPay = () => {
         if (selectedSeats.length === 0) return;
-        // Navegar al checkout con datos (Fase 4)
         navigate("/checkout", { state: { event, seats: selectedSeats, total: totalPrice } });
     };
 
     if (loading) return <div className="text-center p-10">Cargando detalles...</div>;
     if (!event) return <div className="text-center p-10">Evento no encontrado</div>;
+
+    const isOrganizerOrAdmin = currentUser?.role === 1 || currentUser?.role === 2;
 
     return (
         <div className="container mx-auto px-4 py-8 flex flex-col lg:flex-row gap-8">
@@ -97,10 +142,30 @@ export const EventDetailPage = () => {
                 <img src={event.imageUrl || "https://via.placeholder.com/600x400"} className="rounded-lg shadow-md mb-6 w-full" />
                 <h1 className="text-3xl font-bold mb-2">{event.title}</h1>
                 <p className="text-gray-600 mb-4">{event.description}</p>
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-6">
                     <p className="font-bold">📍 {event.venueName}</p>
                     <p>📅 {new Date(event.date).toLocaleDateString()}</p>
+                    {event.category && (
+                        <p className="mt-2"><span className="bg-purple-100 text-purple-800 text-xs font-semibold mr-2 px-2.5 py-0.5 rounded">{event.category}</span></p>
+                    )}
                 </div>
+
+                {isOrganizerOrAdmin && (
+                    <div className="flex gap-4 mb-6">
+                        <button
+                            onClick={() => navigate(`/edit-event/${id}`)}
+                            className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded"
+                        >
+                            Editar
+                        </button>
+                        <button
+                            onClick={handleDeleteEvent}
+                            className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                )}
 
                 {selectedSeats.length > 0 && (
                     <div className="mt-6 p-4 bg-white shadow-lg rounded-lg border-2 border-blue-500">
@@ -136,6 +201,7 @@ export const EventDetailPage = () => {
                     seats={seats}
                     onSeatClick={handleSeatClick}
                     selectedSeatIds={selectedSeats.map(s => s.id)}
+                    currentUserId={userId}
                 />
             </div>
         </div>

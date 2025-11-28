@@ -13,6 +13,7 @@ export interface Event {
     date: string;
     venueName: string;
     imageUrl?: string;
+    category: string;
     status: number; // 0: Draft, 1: Published
     sections: EventSection[];
 }
