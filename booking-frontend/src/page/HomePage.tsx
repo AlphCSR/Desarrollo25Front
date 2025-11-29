@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "react-oidc-context";
-import { getEvents } from "../services/api";
+import { getEvents, getUserByEmail } from "../services/api";
 import { type Event } from "../types/Event";
 import { EventCard } from "../components/EventCard";
 
@@ -11,29 +11,34 @@ export const HomePage = () => {
     const [events, setEvents] = useState<Event[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [userPreferences, setUserPreferences] = useState<string[]>([]);
     const navigate = useNavigate();
 
     const token = auth.user?.access_token || "";
 
     useEffect(() => {
-        // Solo intentamos cargar si el usuario está autenticado
-        // Si no está autenticado, mostramos la vista pública (que por ahora es vacía o un mensaje)
-        // O podríamos mostrar eventos públicos si el backend lo permite sin token.
-        // Asumimos que getEvents requiere token por ahora.
         if (auth.isAuthenticated && token) {
-            fetchEvents();
+            fetchData();
         } else {
             setLoading(false);
         }
     }, [auth.isAuthenticated, token]);
 
-    const fetchEvents = async () => {
+    const fetchData = async () => {
         try {
-            const data = await getEvents(token);
-            setEvents(data);
+            // Fetch Events
+            const eventsData = await getEvents(token);
+            setEvents(eventsData);
+
+            // Fetch User Preferences
+            if (auth.user?.profile.email) {
+                const userData = await getUserByEmail(auth.user.profile.email, token);
+                setUserPreferences(userData.preferences || []);
+            }
+
         } catch (err) {
             console.error(err);
-            setError("Error al cargar eventos. ¿Está el backend encendido?");
+            setError("Error al cargar datos.");
         } finally {
             setLoading(false);
         }
@@ -51,7 +56,6 @@ export const HomePage = () => {
         return <div className="text-center py-10">Cargando...</div>;
     }
 
-    // Vista para usuarios no autenticados (Landing Page simplificada)
     if (!auth.isAuthenticated) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
@@ -78,9 +82,17 @@ export const HomePage = () => {
         );
     }
 
+    // Filter Recommended Events
+    const recommendedEvents = userPreferences.length > 0
+        ? events.filter(e => userPreferences.includes(e.category))
+        : [];
+
+    const otherEvents = userPreferences.length > 0
+        ? events.filter(e => !userPreferences.includes(e.category))
+        : events;
+
     return (
         <div className="container mx-auto px-4 py-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-8">Próximos Eventos</h1>
 
             {loading && <div className="text-center py-10">Cargando eventos...</div>}
 
@@ -90,15 +102,40 @@ export const HomePage = () => {
                 </div>
             )}
 
-            {!loading && !error && events.length === 0 && (
-                <div className="text-center text-gray-500 py-10">No hay eventos disponibles aún.</div>
-            )}
+            {!loading && !error && (
+                <>
+                    {/* Recommended Section */}
+                    {recommendedEvents.length > 0 && (
+                        <div className="mb-12">
+                            <h2 className="text-2xl font-bold text-blue-700 mb-6 flex items-center">
+                                <span className="mr-2">✨</span> Recomendados para ti
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {recommendedEvents.map(event => (
+                                    <EventCard key={event.id} event={event} onBook={handleBook} />
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {events.map(event => (
-                    <EventCard key={event.id} event={event} onBook={handleBook} />
-                ))}
-            </div>
+                    {/* All Events Section */}
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                            {recommendedEvents.length > 0 ? "Más Eventos" : "Próximos Eventos"}
+                        </h2>
+
+                        {otherEvents.length === 0 && (
+                            <p className="text-gray-500">No hay eventos disponibles.</p>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {otherEvents.map(event => (
+                                <EventCard key={event.id} event={event} onBook={handleBook} />
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 };

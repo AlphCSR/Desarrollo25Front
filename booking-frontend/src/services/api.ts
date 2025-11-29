@@ -1,3 +1,4 @@
+
 import axios from 'axios';
 
 const API_URL = "/api"; // Gateway (Proxy)
@@ -69,6 +70,28 @@ export const unlockSeat = async (seatId: string, userId: string, token: string) 
     return response.data;
 };
 
+// Bookings
+export const getUserBookings = async (userId: string, token: string) => {
+    const response = await axios.get(`${API_URL}/Booking/user/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    return response.data;
+};
+
+export const createBooking = async (bookingData: any, token: string) => {
+    const response = await axios.post(`${API_URL}/Booking`, bookingData, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    return response.data;
+};
+
+export const payBooking = async (bookingId: string, amount: number, token: string) => {
+    const response = await axios.post(`${API_URL}/payments/api/Payment/pay`, { bookingId, amount }, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    return response.data;
+};
+
 // Users
 export const createUser = async (user: any) => {
     const response = await axios.post(`${API_URL}/Users`, user);
@@ -97,7 +120,13 @@ export const updateUser = async (id: string, user: any, token: string) => {
 };
 
 export const deleteUser = async (id: string, token: string) => {
-    const response = await axios.delete(`${API_URL}/Users/${id}`, {
+    await axios.delete(`${API_URL}/Users/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+};
+
+export const getUserHistory = async (id: string, token: string) => {
+    const response = await axios.get(`${API_URL}/Users/${id}/history`, {
         headers: { Authorization: `Bearer ${token}` }
     });
     return response.data;

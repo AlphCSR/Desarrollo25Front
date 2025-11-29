@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "react-oidc-context";
-import { getEventById, getEventSeats, lockSeat, unlockSeat, getEventSections, getUserByEmail, deleteEvent } from "../services/api";
+import { getEventById, getEventSeats, lockSeat, unlockSeat, getEventSections, getUserByEmail, deleteEvent, createBooking } from "../services/api";
 import { SeatGrid } from "../components/SeatGrid";
 
 export const EventDetailPage = () => {
@@ -125,9 +125,24 @@ export const EventDetailPage = () => {
     // Calcular total
     const totalPrice = selectedSeats.reduce((sum, seat) => sum + (seat.price || 0), 0);
 
-    const handleProceedToPay = () => {
+    const handleReserve = async () => {
         if (selectedSeats.length === 0) return;
-        navigate("/checkout", { state: { event, seats: selectedSeats, total: totalPrice } });
+
+        try {
+            const bookingData = {
+                userId: userId,
+                eventId: id,
+                seatIds: selectedSeats.map(s => s.id),
+                totalAmount: totalPrice
+            };
+
+            await createBooking(bookingData, token);
+            alert("Reserva creada con éxito. Ve a tu perfil para pagar.");
+            navigate("/profile");
+        } catch (error) {
+            console.error("Error creating booking", error);
+            alert("Error al crear la reserva.");
+        }
     };
 
     if (loading) return <div className="text-center p-10">Cargando detalles...</div>;
@@ -185,10 +200,10 @@ export const EventDetailPage = () => {
                         </div>
 
                         <button
-                            onClick={handleProceedToPay}
-                            className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 transition-colors"
+                            onClick={handleReserve}
+                            className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-colors"
                         >
-                            Pagar Ahora
+                            Reservar
                         </button>
                     </div>
                 )}
