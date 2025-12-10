@@ -222,7 +222,7 @@ export const ProfilePage = () => {
                             <h2 className="text-xl font-bold text-white">Mis Reservas</h2>
                         </div>
                         <div className="p-4">
-                            <BookingsList userId={user.id} />
+                            <BookingsList userId={user.keycloakId} />
                         </div>
                     </div>
 
